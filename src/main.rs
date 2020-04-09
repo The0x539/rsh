@@ -4,9 +4,11 @@ use std::env;
 enum Error {
     BackslashAtEnd,
     MultiRedirect,
-    ExpectedSomethingElse,
+    Expected(&'static str),
     ParseFail,
 }
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 enum Stdin {
@@ -59,7 +61,7 @@ struct Job {
 }
 
 impl Command {
-    pub fn set_stdin(&mut self, stdin: Stdin) -> Result<(), Error> {
+    pub fn set_stdin(&mut self, stdin: Stdin) -> Result<()> {
         match self.stdin {
             Stdin::Terminal => {
                 self.stdin = stdin;
@@ -68,7 +70,7 @@ impl Command {
             _ => Err(Error::MultiRedirect)
         }
     }
-    pub fn set_stdout(&mut self, stdout: Stdout) -> Result<(), Error> {
+    pub fn set_stdout(&mut self, stdout: Stdout) -> Result<()> {
         match self.stdout {
             Stdout::Terminal => {
                 self.stdout = stdout;
@@ -79,7 +81,7 @@ impl Command {
     }
 }
 
-fn parse_token(cmdline: &str) -> Result<(Token, &str), Error> {
+fn parse_token(cmdline: &str) -> Result<(Token, &str)> {
     let symbols = [
         (">>", Token::DoubleRightWaka),
         (">", Token::RightWaka),
@@ -105,7 +107,7 @@ fn parse_token(cmdline: &str) -> Result<(Token, &str), Error> {
     }
 }
 
-fn take_bareword(cmdline: &str) -> Result<(Token, usize), Error> {
+fn take_bareword(cmdline: &str) -> Result<(Token, usize)> {
     let mut idx = 0;
     let mut escaped = false;
     let mut token = String::new();
@@ -129,7 +131,7 @@ fn take_bareword(cmdline: &str) -> Result<(Token, usize), Error> {
     Ok((Token::Argument(token), idx))
 }
 
-fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str), Error> {
+fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str)> {
     cmdline = cmdline.trim_start();
 
     let mut cmd = Command {
@@ -149,9 +151,9 @@ fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str), Er
                         Token::LeftWaka => cmd.set_stdin(Stdin::File(arg))?,
                         Token::RightWaka => cmd.set_stdout(Stdout::File(arg))?,
                         Token::DoubleRightWaka => cmd.set_stdout(Stdout::FileAppend(arg))?,
-                        _ => return Err(Error::ExpectedSomethingElse), // should never happen
+                        _ => unreachable!("redirecting stdio using {:?}", token),
                     },
-                    _ => return Err(Error::ExpectedSomethingElse),
+                    _ => return Err(Error::Expected("redirection target")),
                 }
                 cmdline = rest2;
                 continue;
@@ -171,7 +173,7 @@ fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str), Er
     Ok((cmd, cmdline))
 }
 
-fn parse_job(mut cmdline: &str) -> Result<(Job, &str), Error> {
+fn parse_job(mut cmdline: &str) -> Result<(Job, &str)> {
     cmdline = cmdline.trim_start();
 
     let (first_cmd, rest) = parse_pipeline(cmdline, Stdin::Terminal)?;
@@ -204,14 +206,14 @@ fn parse_job(mut cmdline: &str) -> Result<(Job, &str), Error> {
                 cmdline = rest;
                 break;
             }
-            _ => return Err(Error::ExpectedSomethingElse),
+            _ => return Err(Error::Expected("pipeline separator or job separator")),
         }
     }
 
     Ok((job, cmdline))
 }
 
-fn parse_cmdline(mut cmdline: &str) -> Result<Vec<Job>, Error> {
+fn parse_cmdline(mut cmdline: &str) -> Result<Vec<Job>> {
     let mut jobs = Vec::new();
 
     while !cmdline.is_empty() {
