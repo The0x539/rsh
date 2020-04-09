@@ -82,6 +82,15 @@ impl Command {
 }
 
 fn parse_token(cmdline: &str) -> Result<(Token, &str)> {
+    let (token, idx) = None
+        .or(take_delimiter(cmdline))
+        .or(take_bareword(cmdline)?)
+        .ok_or(Error::ParseFail)?;
+
+    Ok((token, cmdline.split_at(idx).1.trim_start()))
+}
+
+fn take_delimiter(cmdline: &str) -> Option<(Token, usize)> {
     let symbols = [
         (">>", Token::DoubleRightWaka),
         (">", Token::RightWaka),
@@ -92,22 +101,17 @@ fn parse_token(cmdline: &str) -> Result<(Token, &str)> {
         ("&", Token::Ampersand),
         (";", Token::Semicolon),
     ];
-    let mut tidx: Option<(Token, usize)> = None;
 
     for (sym, tok) in &symbols {
         if cmdline.starts_with(sym) {
-            tidx = Some((tok.clone(), sym.len()));
-            break;
+            return Some((tok.clone(), sym.len()));
         }
     }
-    tidx = tidx.or(Some(take_bareword(cmdline)?));
-    match tidx {
-        Some((token, idx)) => Ok((token, cmdline.split_at(idx).1.trim_start())),
-        None => Err(Error::ParseFail),
-    }
+
+    None
 }
 
-fn take_bareword(cmdline: &str) -> Result<(Token, usize)> {
+fn take_bareword(cmdline: &str) -> Result<Option<(Token, usize)>> {
     let mut idx = 0;
     let mut escaped = false;
     let mut token = String::new();
@@ -125,10 +129,14 @@ fn take_bareword(cmdline: &str) -> Result<(Token, usize)> {
         }
         idx += c.len_utf8();
     }
+
     if escaped {
-        return Err(Error::BackslashAtEnd);
+        Err(Error::BackslashAtEnd)
+    } else if token.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((Token::Argument(token), idx)))
     }
-    Ok((Token::Argument(token), idx))
 }
 
 fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str)> {
