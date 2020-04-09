@@ -119,7 +119,7 @@ fn take_bareword(cmdline: &str) -> Result<(Token, usize)> {
             continue;
         }
         match c {
-            ' ' => break,
+            ' ' | ';' | '&' | '|' | '<' | '>' => break,
             '\\' => escaped = true,
             _ => token.push(c),
         }
