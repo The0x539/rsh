@@ -23,7 +23,7 @@ enum Token {
     RightWaka,
     DoubleRightWaka,
     #[allow(dead_code)]
-    Substitution(Box<Chain>),
+    Substitution(Box<Job>),
     And,
     Or,
     Semicolon,
@@ -35,31 +35,31 @@ enum Stdout {
     Terminal,
     File(String),
     FileAppend(String),
-    Pipe(Box<Pipeline>),
+    Pipe(Box<Command>),
 }
 
 #[derive(Debug, Clone)]
-struct Pipeline {
+struct Command {
     argv: Vec<String>,
     stdin: Stdin,
     stdout: Stdout,
 }
 
 #[derive(Debug, Clone)]
-enum ChainCons {
-    Then(Box<Pipeline>), // ;
-    And(Box<Pipeline>),  // &&
-    Or(Box<Pipeline>),   // ||
-    Also(Box<Pipeline>), // &
+enum JobCons {
+    Then(Box<Command>), // ;
+    And(Box<Command>),  // &&
+    Or(Box<Command>),   // ||
+    Also(Box<Command>), // &
 }
 
 #[derive(Debug, Clone)]
-struct Chain {
-    first: Pipeline,
-    rest: Vec<ChainCons>,
+struct Job {
+    first: Command,
+    rest: Vec<JobCons>,
 }
 
-impl Pipeline {
+impl Command {
     pub fn set_stdin(&mut self, stdin: Stdin) -> Result<(), Error> {
         match self.stdin {
             Stdin::Terminal => {
@@ -131,10 +131,10 @@ fn take_bareword(cmdline: &str) -> Result<(Token, usize), Error> {
     Ok((Token::Argument(token), idx))
 }
 
-fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Pipeline, &str), Error> {
+fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str), Error> {
     cmdline = cmdline.trim_start();
 
-    let mut cmd = Pipeline {
+    let mut cmd = Command {
         argv: Vec::new(),
         stdin: stdin,
         stdout: Stdout::Terminal,
@@ -173,13 +173,13 @@ fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Pipeline, &str), E
     Ok((cmd, cmdline))
 }
 
-fn parse_chain(mut cmdline: &str) -> Result<(Chain, &str), Error> {
+fn parse_job(mut cmdline: &str) -> Result<(Job, &str), Error> {
     cmdline = cmdline.trim_start();
 
     let (first_cmd, rest) = parse_pipeline(cmdline, Stdin::Terminal)?;
     cmdline = rest;
 
-    let mut cmd = Chain {
+    let mut job = Job {
         first: first_cmd,
         rest: Vec::new(),
     };
@@ -190,24 +190,24 @@ fn parse_chain(mut cmdline: &str) -> Result<(Chain, &str), Error> {
             Token::And | Token::Or | Token::Semicolon | Token::Ampersand => {
                 let (next_cmd, rest2) = parse_pipeline(rest, Stdin::Terminal)?;
                 let cons_type = match token {
-                    Token::Semicolon => ChainCons::Then,
-                    Token::And => ChainCons::And,
-                    Token::Or => ChainCons::Or,
-                    Token::Ampersand => ChainCons::Also,
+                    Token::Semicolon => JobCons::Then,
+                    Token::And => JobCons::And,
+                    Token::Or => JobCons::Or,
+                    Token::Ampersand => JobCons::Also,
                     _ => unreachable!("chaining commands using {:?}", token),
                 };
-                cmd.rest.push(cons_type(Box::new(next_cmd)));
+                job.rest.push(cons_type(Box::new(next_cmd)));
                 cmdline = rest2;
             },
             _ => return Err(Error::ExpectedSomethingElse),
         }
     }
 
-    Ok((cmd, cmdline))
+    Ok((job, cmdline))
 }
 
 fn main() {
     for arg in env::args().skip(1) {
-        println!("{:?}", parse_chain(&arg));
+        println!("{:?}", parse_job(&arg));
     }
 }
