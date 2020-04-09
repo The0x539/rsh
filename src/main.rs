@@ -24,13 +24,11 @@ enum Stdin {
 
 #[derive(Debug, Clone)]
 enum Token {
-    Argument(String),
+    Args(Vec<String>),
     Pipe,
     LeftWaka,
     RightWaka,
     DoubleRightWaka,
-    #[allow(dead_code)]
-    Substitution(Box<Job>),
     And,
     Or,
     Semicolon,
@@ -89,7 +87,7 @@ impl Command {
 fn parse_token(cmdline: &str) -> Result<(Token, &str)> {
     let (token, rest) = None
         .or(parse_delimiter(cmdline))
-        //.or(parse_argument(cmdline, false)?)
+        .or(parse_argument(cmdline, false)?.map(|(x, y)| (Token::Args(x), y)))
         .ok_or(Error::ParseFail)?;
 
     Ok((token, rest.trim_start()))
@@ -286,15 +284,22 @@ fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str)> {
     while !cmdline.is_empty() {
         let (token, rest) = parse_token(cmdline)?;
         match token {
-            Token::Argument(arg) => cmd.argv.push(arg),
+            Token::Args(args) => cmd.argv.extend(args),
             Token::LeftWaka | Token::RightWaka | Token::DoubleRightWaka => {
                 let (target, rest2) = parse_token(rest)?;
                 match target {
-                    Token::Argument(arg) => match token {
-                        Token::LeftWaka => cmd.set_stdin(Stdin::File(arg))?,
-                        Token::RightWaka => cmd.set_stdout(Stdout::File(arg))?,
-                        Token::DoubleRightWaka => cmd.set_stdout(Stdout::FileAppend(arg))?,
-                        _ => unreachable!("redirecting stdio using {:?}", token),
+                    Token::Args(args) => {
+                        let arg = if args.len() == 1 {
+                            args[0].clone()
+                        } else {
+                            return Err(Error::Expected("Single-valued redirection target"));
+                        };
+                        match token {
+                            Token::LeftWaka => cmd.set_stdin(Stdin::File(arg))?,
+                            Token::RightWaka => cmd.set_stdout(Stdout::File(arg))?,
+                            Token::DoubleRightWaka => cmd.set_stdout(Stdout::FileAppend(arg))?,
+                            _ => unreachable!("redirecting stdio using {:?}", token),
+                        }
                     },
                     _ => return Err(Error::Expected("redirection target")),
                 }
@@ -308,7 +313,6 @@ fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str)> {
                  break;
             },
             Token::And | Token::Or | Token::Semicolon | Token::Ampersand => break,
-            _ => (),
         }
         cmdline = rest;
     }
@@ -370,6 +374,6 @@ fn parse_cmdline(mut cmdline: &str) -> Result<Vec<Job>> {
 
 fn main() {
     for arg in env::args().skip(1) {
-        println!("{:?}", parse_argument(&arg, false));
+        println!("{:?}", parse_cmdline(&arg));
     }
 }
