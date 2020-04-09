@@ -47,16 +47,15 @@ struct Command {
 
 #[derive(Debug, Clone)]
 enum JobCons {
-    Then(Box<Command>), // ;
     And(Box<Command>),  // &&
     Or(Box<Command>),   // ||
-    Also(Box<Command>), // &
 }
 
 #[derive(Debug, Clone)]
 struct Job {
     first: Command,
     rest: Vec<JobCons>,
+    background: bool,
 }
 
 impl Command {
@@ -100,7 +99,6 @@ fn parse_token(cmdline: &str) -> Result<(Token, &str), Error> {
         }
     }
     tidx = tidx.or(Some(take_bareword(cmdline)?));
-    
     match tidx {
         Some((token, idx)) => Ok((token, cmdline.split_at(idx).1.trim_start())),
         None => Err(Error::ParseFail),
@@ -182,23 +180,30 @@ fn parse_job(mut cmdline: &str) -> Result<(Job, &str), Error> {
     let mut job = Job {
         first: first_cmd,
         rest: Vec::new(),
+        background: false,
     };
 
     while !cmdline.is_empty() {
         let (token, rest) = parse_token(cmdline)?;
         match token {
-            Token::And | Token::Or | Token::Semicolon | Token::Ampersand => {
+            Token::And | Token::Or => {
                 let (next_cmd, rest2) = parse_pipeline(rest, Stdin::Terminal)?;
                 let cons_type = match token {
-                    Token::Semicolon => JobCons::Then,
                     Token::And => JobCons::And,
                     Token::Or => JobCons::Or,
-                    Token::Ampersand => JobCons::Also,
                     _ => unreachable!("chaining commands using {:?}", token),
                 };
                 job.rest.push(cons_type(Box::new(next_cmd)));
                 cmdline = rest2;
             },
+            Token::Ampersand | Token::Semicolon => {
+                job.background = match token {
+                    Token::Ampersand => true,
+                    _ => false,
+                };
+                cmdline = rest;
+                break;
+            }
             _ => return Err(Error::ExpectedSomethingElse),
         }
     }
@@ -206,8 +211,20 @@ fn parse_job(mut cmdline: &str) -> Result<(Job, &str), Error> {
     Ok((job, cmdline))
 }
 
+fn parse_cmdline(mut cmdline: &str) -> Result<Vec<Job>, Error> {
+    let mut jobs = Vec::new();
+
+    while !cmdline.is_empty() {
+        let (job, rest) = parse_job(cmdline)?;
+        jobs.push(job);
+        cmdline = rest;
+    }
+
+    Ok(jobs)
+}
+
 fn main() {
     for arg in env::args().skip(1) {
-        println!("{:?}", parse_job(&arg));
+        println!("{:?}", parse_cmdline(&arg));
     }
 }
