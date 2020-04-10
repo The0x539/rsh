@@ -152,7 +152,7 @@ fn parse_quoted_str(cmdline: &str) -> Result<Option<(String, &str)>> {
     Err(Error::UnbalancedQuotes)
 }
 
-fn parse_unquoted_str(cmdline: &str, in_braces: bool) -> Result<Option<(String, &str)>> {
+fn parse_unquoted_args_str(cmdline: &str) -> Result<Option<(String, &str)>> {
     let mut idx = 0;
     let mut escaped = false;
     let mut contents = String::new();
@@ -164,31 +164,42 @@ fn parse_unquoted_str(cmdline: &str, in_braces: bool) -> Result<Option<(String, 
             continue;
         }
         match c {
-            '|' | '&' | ';' | '>' | '<' | '{' | '"' | '\'' => break,
-            ',' => {
-                if in_braces {
-                    break;
-                } else {
-                    contents.push(c);
-                }
-            },
-            '}' => {
-                if in_braces {
-                    break;
-                } else {
-                    return Err(Error::Unexpected("Closing brace at top level"));
-                }
-            },
-            ' ' => {
-                if in_braces {
-                    contents.push(c);
-                } else {
-                    break;
-                }
-            }
+            '|' | '&' | ';' | '>' | '<' | '{' | '"' | '\'' | ' ' => break,
+            '}' => return Err(Error::Unexpected("Closing brace at top level")),
             '\\' => escaped = true,
             '$' => {
                 unimplemented!("$variable expansion outside quotes");
+            },
+            _ => contents.push(c),
+        }
+        idx = i + c.len_utf8();
+    }
+
+    if escaped {
+        Err(Error::BackslashAtEnd)
+    } else if contents.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((contents, cmdline.split_at(idx).1)))
+    }
+}
+
+fn parse_unquoted_brace_list_str(cmdline: &str) -> Result<Option<(String, &str)>> {
+    let mut idx = 0;
+    let mut escaped = false;
+    let mut contents = String::new();
+    for (i, c) in cmdline.char_indices() {
+        if escaped {
+            escaped = false;
+            contents.push(c);
+            idx = i + c.len_utf8();
+            continue;
+        }
+        match c {
+            '{' | '"' | '\'' | ',' | '}' => break,
+            '\\' => escaped = true,
+            '$' => {
+                unimplemented!("$variable expansion outside quotes (in brace list)");
             },
             _ => contents.push(c),
         }
@@ -212,32 +223,29 @@ fn parse_brace_list(mut cmdline: &str) -> Result<Option<(Vec<String>, &str)>> {
     }
 
     let mut entries = Vec::new();
+    let mut prev = '{';
 
-    let mut to_push: Option<Vec<String>> = None;
     while let Some((i, c)) = iter.next() {
         match c {
-            ',' => {
-                let mut pieces = to_push.unwrap_or(vec![String::from("")]);
-                entries.append(&mut pieces);
-                to_push = None;
-            },
-            '}' => {
-                entries.append(&mut to_push.unwrap_or(vec![String::from("")]));
-                return Ok(Some((entries, cmdline.split_at(i + c.len_utf8()).1)));
-            },
-            _ => {
-                let (pieces, rest) = parse_argument(cmdline.split_at(i).1, true)?
-                    .ok_or(Error::Expected("brace list entry"))?;
-
-                if to_push.is_none() {
-                    to_push = Some(pieces);
-                    cmdline = rest;
-                    iter = cmdline.char_indices();
-                } else {
-                    unreachable!("double arg in brace list");
+            ',' | '}' => {
+                if prev == '{' || prev == ',' {
+                    entries.push(String::new());
+                }
+                if c == '}' {
+                    return Ok(Some((entries, cmdline.split_at(i + c.len_utf8()).1)));
                 }
             }
+            _ => {
+                let to_parse = cmdline.split_at(i).1;
+                let (pieces, rest) = parse_argument(to_parse, true)?
+                    .ok_or(Error::Expected("foo"))?;
+
+                entries.extend(pieces);
+                cmdline = rest;
+                iter = cmdline.char_indices();
+            }
         }
+        prev = c;
     }
 
     Err(Error::Expected("Closing brace"))
@@ -255,10 +263,17 @@ fn parse_argument(mut cmdline: &str, in_braces: bool) -> Result<Option<(Vec<Stri
     let mut arg = Vec::new();
 
     while !cmdline.is_empty() {
+
+        let parse_unquoted_str = if in_braces {
+            parse_unquoted_brace_list_str
+        } else {
+            parse_unquoted_args_str
+        };
+
         let parse_result = None
             .or(parse_brace_list(cmdline)?)
             .or(parse_quoted_str(cmdline)?.map(|(x, y)| (vec![x], y)))
-            .or(parse_unquoted_str(cmdline, in_braces)?.map(|(x, y)| (vec![x], y)));
+            .or(parse_unquoted_str(cmdline)?.map(|(x, y)| (vec![x], y)));
 
         let (piece, rest) = match parse_result {
             Some(x) => x,
