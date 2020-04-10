@@ -3,6 +3,8 @@ use std::env;
 extern crate itertools;
 use itertools::Itertools;
 
+use std::fmt;
+
 #[derive(Debug, Clone)]
 enum Error {
     BackslashAtEnd,
@@ -20,6 +22,15 @@ enum Stdin {
     Terminal,
     File(String),
     Pipe,
+}
+
+impl fmt::Display for Stdin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Stdin::File(filename) => write!(f, " < {}", filename),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -43,11 +54,28 @@ enum Stdout {
     Pipe(Box<Command>),
 }
 
+impl fmt::Display for Stdout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Stdout::File(filename) => write!(f, " > {}", filename),
+            Stdout::FileAppend(filename) => write!(f, " >> {}", filename),
+            Stdout::Pipe(cmd) => write!(f, " | {}", cmd),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Command {
     argv: Vec<String>,
     stdin: Stdin,
     stdout: Stdout,
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}{}", self.argv.join(" "), self.stdin, self.stdout)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -56,11 +84,47 @@ enum JobCons {
     Or(Box<Command>), // ||
 }
 
+impl fmt::Display for JobCons {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (delimiter, cmd) = match self {
+            JobCons::And(c) => ("&&", c),
+            JobCons::Or(c) => ("||", c),
+        };
+        write!(f, " {} {}", delimiter, cmd)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Job {
     first: Command,
     rest: Vec<JobCons>,
     background: bool,
+}
+
+impl fmt::Display for Job {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let terminator = match self.background {
+            true => " &",
+            false => ";",
+        };
+        self.first.fmt(f)?;
+        for x in &self.rest {
+            x.fmt(f)?;
+        }
+        terminator.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CommandLine(Vec<Job>);
+
+impl fmt::Display for CommandLine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for job in &self.0 {
+            write!(f, "{}\n", job)?;
+        }
+        Ok(())
+    }
 }
 
 impl Command {
@@ -394,7 +458,7 @@ fn parse_job(mut cmdline: &str) -> Result<(Job, &str)> {
     Ok((job, cmdline))
 }
 
-fn parse_cmdline(mut cmdline: &str) -> Result<Vec<Job>> {
+fn parse_cmdline(mut cmdline: &str) -> Result<CommandLine> {
     let mut jobs = Vec::new();
 
     while !cmdline.is_empty() {
@@ -403,11 +467,11 @@ fn parse_cmdline(mut cmdline: &str) -> Result<Vec<Job>> {
         cmdline = rest;
     }
 
-    Ok(jobs)
+    Ok(CommandLine(jobs))
 }
 
 fn main() {
     for arg in env::args().skip(1) {
-        println!("{:?}", parse_cmdline(&arg));
+        println!("{}", parse_cmdline(&arg).unwrap());
     }
 }
