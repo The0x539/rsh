@@ -254,12 +254,29 @@ fn parse_brace_list(mut cmdline: &str) -> Result<Option<(Vec<String>, &str)>> {
     Err(Error::Expected("Closing brace"))
 }
 
-fn expand_argument(pieces: Vec<Vec<String>>) -> Vec<String> {
-    pieces
-        .into_iter()
-        .multi_cartesian_product()
-        .map(|x| x.join(""))
-        .collect()
+fn expand_argument(uncondensed: Vec<Vec<String>>) -> Vec<String> {
+    let mut pieces = Vec::<Vec<String>>::new();
+    for piece in uncondensed {
+        if piece.is_empty() || (piece.len() == 1 && piece[0].is_empty()) {
+            continue;
+        } else if !pieces.is_empty() && pieces.last().unwrap().len() == 1 && piece.len() == 1 {
+            pieces.last_mut().unwrap()[0].push_str(&piece[0]);
+        } else {
+            pieces.push(piece);
+        }
+    }
+
+    match pieces.len() {
+        0 => vec![String::new()],
+        1 => pieces[0].clone(),
+        _ => {
+            pieces
+                .into_iter()
+                .multi_cartesian_product()
+                .map(|x| x.concat())
+                .collect()
+        }
+    }
 }
 
 fn parse_argument(mut cmdline: &str, in_braces: bool) -> Result<Option<(Vec<String>, &str)>> {
