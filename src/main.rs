@@ -107,7 +107,7 @@ fn parse_delimiter(cmdline: &str) -> Option<(Token, &str)> {
 
     for (sym, tok) in &symbols {
         if cmdline.starts_with(sym) {
-            return Some((tok.clone(), cmdline.split_at(sym.len()).1));
+            return Some((tok.clone(), &cmdline[sym.len()..]));
         }
     }
 
@@ -129,10 +129,11 @@ fn parse_quoted_str(cmdline: &str) -> Result<Option<(String, &str)>> {
             contents.push(c);
             continue;
         }
+        let j = i + c.len_utf8();
         match c {
             '"' | '\'' => {
                 if double_quoted == (c == '"') {
-                    return Ok(Some((contents, cmdline.split_at(i + c.len_utf8()).1)));
+                    return Ok(Some((contents, &cmdline[j..])));
                 } else {
                     contents.push(c);
                 }
@@ -180,7 +181,7 @@ fn parse_unquoted_args_str(cmdline: &str) -> Result<Option<(String, &str)>> {
     } else if contents.is_empty() {
         Ok(None)
     } else {
-        Ok(Some((contents, cmdline.split_at(idx).1)))
+        Ok(Some((contents, &cmdline[idx..])))
     }
 }
 
@@ -211,7 +212,7 @@ fn parse_unquoted_brace_list_str(cmdline: &str) -> Result<Option<(String, &str)>
     } else if contents.is_empty() {
         Ok(None)
     } else {
-        Ok(Some((contents, cmdline.split_at(idx).1)))
+        Ok(Some((contents, &cmdline[idx..])))
     }
 }
 
@@ -226,19 +227,19 @@ fn parse_brace_list(mut cmdline: &str) -> Result<Option<(Vec<String>, &str)>> {
     let mut prev = '{';
 
     while let Some((i, c)) = iter.next() {
+        let j = i + c.len_utf8();
         match c {
             ',' | '}' => {
                 if prev == '{' || prev == ',' {
                     entries.push(String::new());
                 }
                 if c == '}' {
-                    return Ok(Some((entries, cmdline.split_at(i + c.len_utf8()).1)));
+                    return Ok(Some((entries, &cmdline[j..])));
                 }
             }
             _ => {
-                let to_parse = cmdline.split_at(i).1;
-                let (pieces, rest) = parse_argument(to_parse, true)?
-                    .ok_or(Error::Expected("foo"))?;
+                let (pieces, rest) = parse_argument(&cmdline[i..], true)?
+                    .ok_or(Error::Expected("Brace list entry"))?;
 
                 entries.extend(pieces);
                 cmdline = rest;
