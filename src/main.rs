@@ -52,8 +52,8 @@ struct Command {
 
 #[derive(Debug, Clone)]
 enum JobCons {
-    And(Box<Command>),  // &&
-    Or(Box<Command>),   // ||
+    And(Box<Command>), // &&
+    Or(Box<Command>), // ||
 }
 
 #[derive(Debug, Clone)]
@@ -69,8 +69,8 @@ impl Command {
             Stdin::Terminal => {
                 self.stdin = stdin;
                 Ok(())
-            },
-            _ => Err(Error::MultiRedirect)
+            }
+            _ => Err(Error::MultiRedirect),
         }
     }
     pub fn set_stdout(&mut self, stdout: Stdout) -> Result<()> {
@@ -78,16 +78,17 @@ impl Command {
             Stdout::Terminal => {
                 self.stdout = stdout;
                 Ok(())
-            },
-            _ => Err(Error::MultiRedirect)
+            }
+            _ => Err(Error::MultiRedirect),
         }
     }
 }
 
 fn parse_token(cmdline: &str) -> Result<(Token, &str)> {
-    let (token, rest) = None
-        .or(parse_delimiter(cmdline))
-        .or(parse_argument(cmdline, false)?.map(|(x, y)| (Token::Args(x), y)))
+    let (token, rest) = None.or(parse_delimiter(cmdline))
+        .or(parse_argument(cmdline, false)?.map(
+            |(x, y)| (Token::Args(x), y),
+        ))
         .ok_or(Error::ParseFail)?;
 
     Ok((token, rest.trim_start()))
@@ -137,7 +138,7 @@ fn parse_quoted_str(cmdline: &str) -> Result<Option<(String, &str)>> {
                 } else {
                     contents.push(c);
                 }
-            },
+            }
             '\\' => escaped = true,
             '$' => {
                 if double_quoted {
@@ -145,7 +146,7 @@ fn parse_quoted_str(cmdline: &str) -> Result<Option<(String, &str)>> {
                 } else {
                     contents.push(c);
                 }
-            },
+            }
             _ => contents.push(c),
         }
     }
@@ -170,7 +171,7 @@ fn parse_unquoted_args_str(cmdline: &str) -> Result<Option<(String, &str)>> {
             '\\' => escaped = true,
             '$' => {
                 unimplemented!("$variable expansion outside quotes");
-            },
+            }
             _ => contents.push(c),
         }
         idx = i + c.len_utf8();
@@ -201,7 +202,7 @@ fn parse_unquoted_brace_list_str(cmdline: &str) -> Result<Option<(String, &str)>
             '\\' => escaped = true,
             '$' => {
                 unimplemented!("$variable expansion outside quotes (in brace list)");
-            },
+            }
             _ => contents.push(c),
         }
         idx = i + c.len_utf8();
@@ -238,8 +239,9 @@ fn parse_brace_list(mut cmdline: &str) -> Result<Option<(Vec<String>, &str)>> {
                 }
             }
             _ => {
-                let (pieces, rest) = parse_argument(&cmdline[i..], true)?
-                    .ok_or(Error::Expected("Brace list entry"))?;
+                let (pieces, rest) = parse_argument(&cmdline[i..], true)?.ok_or(Error::Expected(
+                    "Brace list entry",
+                ))?;
 
                 entries.extend(pieces);
                 cmdline = rest;
@@ -271,8 +273,7 @@ fn parse_argument(mut cmdline: &str, in_braces: bool) -> Result<Option<(Vec<Stri
             parse_unquoted_args_str
         };
 
-        let parse_result = None
-            .or(parse_brace_list(cmdline)?)
+        let parse_result = None.or(parse_brace_list(cmdline)?)
             .or(parse_quoted_str(cmdline)?.map(|(x, y)| (vec![x], y)))
             .or(parse_unquoted_str(cmdline)?.map(|(x, y)| (vec![x], y)));
 
@@ -316,18 +317,18 @@ fn parse_pipeline(mut cmdline: &str, stdin: Stdin) -> Result<(Command, &str)> {
                             Token::DoubleRightWaka => cmd.set_stdout(Stdout::FileAppend(arg))?,
                             _ => unreachable!("redirecting stdio using {:?}", token),
                         }
-                    },
+                    }
                     _ => return Err(Error::Expected("redirection target")),
                 }
                 cmdline = rest2;
                 continue;
-            },
+            }
             Token::Pipe => {
-                 let (dest, rest2) = parse_pipeline(rest, Stdin::Pipe)?;
-                 cmd.set_stdout(Stdout::Pipe(Box::new(dest)))?;
-                 cmdline = rest2;
-                 break;
-            },
+                let (dest, rest2) = parse_pipeline(rest, Stdin::Pipe)?;
+                cmd.set_stdout(Stdout::Pipe(Box::new(dest)))?;
+                cmdline = rest2;
+                break;
+            }
             Token::And | Token::Or | Token::Semicolon | Token::Ampersand => break,
         }
         cmdline = rest;
@@ -360,7 +361,7 @@ fn parse_job(mut cmdline: &str) -> Result<(Job, &str)> {
                 };
                 job.rest.push(cons_type(Box::new(next_cmd)));
                 cmdline = rest2;
-            },
+            }
             Token::Ampersand | Token::Semicolon => {
                 job.background = match token {
                     Token::Ampersand => true,
